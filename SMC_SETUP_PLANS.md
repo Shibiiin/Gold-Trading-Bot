@@ -44,12 +44,16 @@ This is a highly specific, time-based 1-Minute (1M) strategy designed exclusivel
     1. Wait for price to drop below the marked Low (sweeping downside liquidity).
     2. Wait for a bullish Market Structure Shift (MSS) breaking a previous 1M lower-high.
     3. Ensure the MSS leaves a bullish Fair Value Gap (FVG).
-    4. **Entry:** Buy limit at the FVG. **Target:** 1:2 RR (or 1:3 RR if volume is high).
+    4. **Entry:** Buy limit at the FVG. 
+    5. **Stop Loss:** Placed just below the low of the candle that created the FVG.
+    6. **Target:** 1:2 RR (or 1:3 RR if volume is high).
 *   **Sell Setup:** 
     1. Wait for price to break above the marked High (sweeping upside liquidity).
     2. Wait for a bearish MSS breaking a previous 1M higher-low.
     3. Ensure the MSS leaves a bearish FVG.
-    4. **Entry:** Sell limit at the FVG. **Target:** 1:2 RR (or 1:3 RR if volume is high).
+    4. **Entry:** Sell limit at the FVG. 
+    5. **Stop Loss:** Placed just above the high of the candle that created the FVG.
+    6. **Target:** 1:2 RR (or 1:3 RR if volume is high).
 
 ### 2. Session-Based Fixed Range Volume Profile
 *   **Concept:** Instead of using standard EMAs, calculate the Volume Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL) exclusively for each distinct trading session.
