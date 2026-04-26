@@ -439,6 +439,9 @@
       <div class="panel-header">
         <span class="panel-title">📋 Trade Journal</span>
         <div class="panel-actions">
+          <select id="weekFilter" class="btn" style="background:var(--panel-alt); color:var(--text); border-color:var(--border);">
+            <option value="all">All Time History</option>
+          </select>
           <span class="last-update" id="autoRefresh">Auto-refresh: 10s</span>
           <button class="btn btn-gold" id="refreshBtn">↻ Refresh</button>
         </div>
@@ -508,13 +511,26 @@
       return badge(`${r}${profitText}`, 'breakeven');
     };
 
-    const renderStats = (s) => {
-      document.getElementById('winRate').textContent = s.closed_trades > 0 ? `${fmt(s.win_rate, 1)}%` : '—';
-      document.getElementById('wins').textContent = s.wins ?? 0;
-      document.getElementById('losses').textContent = s.losses ?? 0;
-      document.getElementById('openTrades').textContent = s.open_trades ?? 0;
-      document.getElementById('totalSignals').textContent = s.total_signals ?? 0;
-      const profit = Number(s.total_profit || 0);
+    const renderStats = (filteredEntries) => {
+      let wins = 0, losses = 0, open = 0, profit = 0, signals = filteredEntries.length;
+      filteredEntries.forEach(e => {
+        if (e.status === 'open') open++;
+        if (e.status === 'closed') {
+          const p = Number(e.profit || 0);
+          profit += p;
+          if (e.result === 'win') wins++;
+          else if (e.result === 'loss') losses++;
+        }
+      });
+      const closedCount = wins + losses;
+      const winRate = closedCount > 0 ? (wins / closedCount) * 100 : 0;
+
+      document.getElementById('winRate').textContent = closedCount > 0 ? `${fmt(winRate, 1)}%` : '—';
+      document.getElementById('wins').textContent = wins;
+      document.getElementById('losses').textContent = losses;
+      document.getElementById('openTrades').textContent = open;
+      document.getElementById('totalSignals').textContent = signals;
+      
       const profitEl = document.getElementById('totalProfit');
       profitEl.textContent = `$${fmt(profit)}`;
       profitEl.style.color = profit > 0 ? 'var(--green)' : profit < 0 ? 'var(--red)' : '';
@@ -532,11 +548,8 @@
 
       (entries || []).forEach(e => {
         if (e.status !== 'closed') return;
-        
-        // Try closed_at, updated_at, or fallback to created_at
         const timeStr = e.closed_at || e.updated_at || e.created_at;
         if (!timeStr) return;
-        
         const d = new Date(timeStr);
         if (Number.isNaN(d.getTime())) return;
 
@@ -559,11 +572,10 @@
       mEl.style.color = monthly > 0 ? 'var(--green)' : monthly < 0 ? 'var(--red)' : '';
     };
 
-    const renderRows = (entries) => {
+    const renderRows = (actionable) => {
       const body = document.getElementById('journalBody');
-      const actionable = entries.filter(e => e.action && e.action !== 'SKIP');
       if (!actionable.length) {
-        body.innerHTML = `<tr><td colspan="10" class="empty-state"><div class="icon">📊</div><div>No actionable trades yet. Waiting for signals...</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="10" class="empty-state"><div class="icon">📊</div><div>No actionable trades for this period.</div></td></tr>`;
         return;
       }
 
@@ -580,14 +592,8 @@
             <div class="price-main" style="color:var(--green)">TP ${fmt(tpPips, 0)}p</div>
           </div>`;
 
-        const rrCell = rr > 0
-          ? `<span class="rr-pill">1:${fmt(rr, 0)}</span>`
-          : '—';
-
-        const volTag = volRatio !== null
-          ? `<span style="color:${volRatio >= 1.5 ? 'var(--amber)' : 'var(--muted)'};font-size:11px">Vol ${fmt(volRatio, 1)}x</span>`
-          : '';
-
+        const rrCell = rr > 0 ? `<span class="rr-pill">1:${fmt(rr, 0)}</span>` : '—';
+        const volTag = volRatio !== null ? `<span style="color:${volRatio >= 1.5 ? 'var(--amber)' : 'var(--muted)'};font-size:11px">Vol ${fmt(volRatio, 1)}x</span>` : '';
         const reason = e.reason || '—';
         const strategy = e.strategy_name || 'xauusd_levels';
         const score = Number(e.setup_score || 0);
@@ -613,15 +619,69 @@
       }).join('');
     };
 
-    let refreshCount = 0;
+    let allEntries = [];
+    
+    // Calculate week string (e.g. "Week of Apr 20, 2026")
+    const getWeekLabel = (dateStr) => {
+      const d = new Date(dateStr);
+      if (Number.isNaN(d.getTime())) return null;
+      const start = new Date(d);
+      start.setDate(d.getDate() - d.getDay()); // Go to Sunday
+      return `Week of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    };
+
+    const updateDropdownOptions = (entries) => {
+      const select = document.getElementById('weekFilter');
+      const currentVal = select.value;
+      const weeks = new Set();
+      
+      entries.forEach(e => {
+        const timeStr = e.closed_at || e.updated_at || e.created_at;
+        const label = getWeekLabel(timeStr);
+        if (label) weeks.add(label);
+      });
+      
+      const sortedWeeks = Array.from(weeks).sort((a, b) => new Date(b.replace('Week of ', '')) - new Date(a.replace('Week of ', '')));
+      
+      select.innerHTML = '<option value="all">All Time History</option>';
+      sortedWeeks.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w;
+        opt.textContent = w;
+        select.appendChild(opt);
+      });
+      
+      if (sortedWeeks.includes(currentVal) || currentVal === 'all') {
+        select.value = currentVal;
+      }
+    };
+
+    const applyFilter = () => {
+      const selectedWeek = document.getElementById('weekFilter').value;
+      let filtered = allEntries;
+      if (selectedWeek !== 'all') {
+        filtered = allEntries.filter(e => {
+          const timeStr = e.closed_at || e.updated_at || e.created_at;
+          return getWeekLabel(timeStr) === selectedWeek;
+        });
+      }
+      const actionable = filtered.filter(e => e.action && e.action !== 'SKIP');
+      renderStats(actionable);
+      renderRows(actionable);
+    };
+
+    document.getElementById('weekFilter').addEventListener('change', applyFilter);
+
     const loadData = async () => {
       try {
-        const res = await fetch('/api/journal/entries?limit=200', { cache: 'no-store' });
+        const res = await fetch('/api/journal/entries?limit=500', { cache: 'no-store' });
         const data = await res.json();
-        renderStats(data.stats || {});
-        renderHistory(data.entries || []);
-        renderRows(data.entries || []);
-        refreshCount++;
+        allEntries = data.entries || [];
+        
+        updateDropdownOptions(allEntries);
+        renderHistory(allEntries);
+        applyFilter();
+        
         document.getElementById('lastUpdated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
         document.getElementById('liveIndicator').style.borderColor = 'rgba(52,211,153,0.3)';
       } catch {
