@@ -12,6 +12,11 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
         secure: false
+      },
+      '/trading-api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false
       }
     }
   }

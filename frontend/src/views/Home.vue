@@ -4,6 +4,9 @@
     <nav class="navbar">
       <div class="nav-brand">MIROFISH</div>
       <div class="nav-links">
+        <router-link to="/trading-journal" class="github-link">
+          查看交易日志 <span class="arrow">↗</span>
+        </router-link>
         <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
           访问我们的Github主页 <span class="arrow">↗</span>
         </a>
