@@ -415,6 +415,25 @@
       </div>
     </section>
 
+    <!-- History Stats -->
+    <section class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 28px;">
+      <div class="stat-card blue">
+        <div class="stat-label">Daily P&L</div>
+        <div class="stat-value" id="dailyProfit">$0.00</div>
+        <div class="stat-sub">Today's closed profit</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-label">Weekly P&L</div>
+        <div class="stat-value" id="weeklyProfit">$0.00</div>
+        <div class="stat-sub">This week's closed profit</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-label">Monthly P&L</div>
+        <div class="stat-value" id="monthlyProfit">$0.00</div>
+        <div class="stat-sub">This month's closed profit</div>
+      </div>
+    </section>
+
     <!-- Trade Journal Table -->
     <section class="panel" id="journalPanel">
       <div class="panel-header">
@@ -501,6 +520,45 @@
       profitEl.style.color = profit > 0 ? 'var(--green)' : profit < 0 ? 'var(--red)' : '';
     };
 
+    const renderHistory = (entries) => {
+      let daily = 0, weekly = 0, monthly = 0;
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay()); 
+      
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      (entries || []).forEach(e => {
+        if (e.status !== 'closed') return;
+        
+        // Try closed_at, updated_at, or fallback to created_at
+        const timeStr = e.closed_at || e.updated_at || e.created_at;
+        if (!timeStr) return;
+        
+        const d = new Date(timeStr);
+        if (Number.isNaN(d.getTime())) return;
+
+        const p = Number(e.profit || 0);
+        if (d >= today) daily += p;
+        if (d >= startOfWeek) weekly += p;
+        if (d >= startOfMonth) monthly += p;
+      });
+
+      const dEl = document.getElementById('dailyProfit');
+      const wEl = document.getElementById('weeklyProfit');
+      const mEl = document.getElementById('monthlyProfit');
+
+      dEl.textContent = `$${fmt(daily)}`;
+      wEl.textContent = `$${fmt(weekly)}`;
+      mEl.textContent = `$${fmt(monthly)}`;
+
+      dEl.style.color = daily > 0 ? 'var(--green)' : daily < 0 ? 'var(--red)' : '';
+      wEl.style.color = weekly > 0 ? 'var(--green)' : weekly < 0 ? 'var(--red)' : '';
+      mEl.style.color = monthly > 0 ? 'var(--green)' : monthly < 0 ? 'var(--red)' : '';
+    };
+
     const renderRows = (entries) => {
       const body = document.getElementById('journalBody');
       const actionable = entries.filter(e => e.action && e.action !== 'SKIP');
@@ -561,6 +619,7 @@
         const res = await fetch('/api/journal/entries?limit=200', { cache: 'no-store' });
         const data = await res.json();
         renderStats(data.stats || {});
+        renderHistory(data.entries || []);
         renderRows(data.entries || []);
         refreshCount++;
         document.getElementById('lastUpdated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
