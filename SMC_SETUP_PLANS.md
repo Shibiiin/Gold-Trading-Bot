@@ -34,4 +34,31 @@ ICT concepts rely heavily on the *time* of day combined with SMC price action. T
 *   **Identification:** Following a Liquidity Sweep, the price violently breaks a recent Swing High (if bullish) or Swing Low (if bearish) with large, high-volume candles (Displacement).
 *   **Trading Rule:** Do not enter on the breakout. Wait for the price to pull back to the Order Block or FVG created by the displacement candle, and enter in the direction of the new structure.
 
+## Phase 6: Custom Asian Session Sweep & Volume Profile
+This is a highly specific, time-based 1-Minute (1M) strategy designed exclusively for the Gold Asian Session.
+
+### 1. The 1M Asian Session Range Sweep
+*   **Time Window:** **IST 4:30 AM - 5:30 AM** (Asian Session).
+*   **Identification:** On the 1M chart, strictly mark the absolute High and absolute Low created between 4:30 AM and 5:30 AM IST.
+*   **Buy Setup:** 
+    1. Wait for price to drop below the marked Low (sweeping downside liquidity).
+    2. Wait for a bullish Market Structure Shift (MSS) breaking a previous 1M lower-high.
+    3. Ensure the MSS leaves a bullish Fair Value Gap (FVG).
+    4. **Entry:** Buy limit at the FVG. **Target:** 1:2 RR (or 1:3 RR if volume is high).
+*   **Sell Setup:** 
+    1. Wait for price to break above the marked High (sweeping upside liquidity).
+    2. Wait for a bearish MSS breaking a previous 1M higher-low.
+    3. Ensure the MSS leaves a bearish FVG.
+    4. **Entry:** Sell limit at the FVG. **Target:** 1:2 RR (or 1:3 RR if volume is high).
+
+### 2. Session-Based Fixed Range Volume Profile
+*   **Concept:** Instead of using standard EMAs, calculate the Volume Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL) exclusively for each distinct trading session.
+*   **Usage:** If the Asian Session Sweep triggers, use the Session's POC as a magnet for Take Profit targets.
+
+## Global Trading Sessions (IST Reference)
+For the time-based algorithms, the system will use the following session boundaries (converted to Indian Standard Time - IST):
+*   **Sydney / Tokyo (Asian Session):** ~ 5:30 AM IST to 1:30 PM IST *(Note: The custom range above uses a tight 4:30 - 5:30 AM prep window).*
+*   **London Session:** 12:30 PM / 1:30 PM IST to 9:30 PM IST *(London Open Killzone is highly volatile).*
+*   **New York Session:** 6:30 PM IST to 2:30 AM IST *(Overlap with London between 6:30 PM - 9:30 PM IST is the highest volume period for Gold).*
+
 *Note: These will be built in the `trading/strategies/` folder in the future once the baseline data is collected.*
