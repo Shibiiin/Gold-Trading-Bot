@@ -10,8 +10,7 @@ import TradingJournalView from '../views/TradingJournalView.vue'
 const routes = [
   {
     path: '/',
-    name: 'Home',
-    component: Home
+    redirect: '/trading-journal'
   },
   {
     path: '/process/:projectId',
