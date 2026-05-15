@@ -1,4 +1,4 @@
-"""Lightweight local MiroFish-compatible backend for trading-agent testing."""
+"""Lightweight local GoldBot-compatible backend for trading-agent testing."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def _make_report(file_content: str, query: str) -> str:
         tone = "mixed market conditions with no clear directional edge"
 
     return (
-        f"MiroFish local stub report.\n\n"
+        f"GoldBot local stub report.\n\n"
         f"Query: {query}\n\n"
         f"The current assessment suggests a {tone}. "
         f"Direction: {direction}. Confidence: {confidence}%.\n"
@@ -98,7 +98,7 @@ def health():
         return jsonify(
             {
                 "status": "ok",
-                "service": "mirofish-backend-stub",
+                "service": "goldbot-backend-stub",
                 "files": len(_files),
                 "simulations": len(_simulations),
             }

@@ -1,4 +1,4 @@
-"""Fetches financial news and market data; builds MiroFish seed document."""
+"""Fetches financial news and market data; builds GoldBot seed document."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 YF_SYMBOL_MAP = {
     "XAUUSD": "GC=F",
+    "XAUUSD=X": "GC=F",
 }
 
 NEWS_QUERY_MAP = {
@@ -18,7 +19,11 @@ NEWS_QUERY_MAP = {
 
 
 def _yf_symbol(ticker: str) -> str:
-    return YF_SYMBOL_MAP.get(ticker.upper(), ticker)
+    symbol = YF_SYMBOL_MAP.get(ticker.upper(), ticker)
+    if ticker.upper() == "XAUUSD=X":
+        symbol = "GC=F"
+    print(f"[DEBUG] GoldBot using YFinance Ticker: {symbol}")
+    return symbol
 
 
 def _news_query(ticker: str) -> str:
@@ -140,7 +145,7 @@ def fetch_market_snapshot(ticker: str) -> dict:
 
 
 def build_seed_document(ticker: str) -> str:
-    """Build a markdown seed document for MiroFish ingestion."""
+    """Build a markdown seed document for GoldBot ingestion."""
     market = fetch_market_snapshot(ticker)
     articles = fetch_news(ticker)
 

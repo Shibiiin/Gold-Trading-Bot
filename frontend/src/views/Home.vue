@@ -2,12 +2,12 @@
   <div class="home-container">
     <!-- 顶部导航栏 -->
     <nav class="navbar">
-      <div class="nav-brand">MIROFISH</div>
+      <div class="nav-brand">GOLDBOT</div>
       <div class="nav-links">
         <router-link to="/trading-journal" class="github-link">
           查看交易日志 <span class="arrow">↗</span>
         </router-link>
-        <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
+        <a href="https://github.com/666ghj/GoldBot" target="_blank" class="github-link">
           访问我们的Github主页 <span class="arrow">↗</span>
         </a>
       </div>
@@ -29,7 +29,7 @@
           
           <div class="hero-desc">
             <p>
-              即使只有一段文字，<span class="highlight-bold">MiroFish</span> 也能基于其中的现实种子，全自动生成与之对应的至多<span class="highlight-orange">百万级Agent</span>构成的平行世界。通过上帝视角注入变量，在复杂的群体交互中寻找动态环境下的<span class="highlight-code">“局部最优解”</span>
+              即使只有一段文字，<span class="highlight-bold">GoldBot</span> 也能基于其中的现实种子，全自动生成与之对应的至多<span class="highlight-orange">百万级Agent</span>构成的平行世界。通过上帝视角注入变量，在复杂的群体交互中寻找动态环境下的<span class="highlight-code">“局部最优解”</span>
             </p>
             <p class="slogan-text">
               让未来在 Agent 群中预演，让决策在百战后胜出<span class="blinking-cursor">_</span>
@@ -42,7 +42,7 @@
         <div class="hero-right">
           <!-- Logo 区域 -->
           <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="MiroFish Logo" class="hero-logo" />
+            <img src="../assets/logo/GoldBot_logo_left.jpeg" alt="GoldBot Logo" class="hero-logo" />
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">
@@ -183,7 +183,7 @@
                   rows="6"
                   :disabled="loading"
                 ></textarea>
-                <div class="model-badge">引擎: MiroFish-V1.0</div>
+                <div class="model-badge">引擎: GoldBot-V1.0</div>
               </div>
             </div>
 

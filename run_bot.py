@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""MiroFish XAUUSD Trading System — Unified Launcher
+"""GoldBot XAUUSD Trading System — Unified Launcher
 
 Starts the signal server (Flask dashboard + API) and trading agent together.
 
 Usage:
-    python run_mirofish.py                       # dry-run, scan every 60s
-    python run_mirofish.py --live                 # live trading via MT5 REST
-    python run_mirofish.py --interval 120         # scan every 120s
-    python run_mirofish.py --live --interval 90   # live, 90s intervals
+    python run_bot.py                       # dry-run, scan every 60s
+    python run_bot.py --live                 # live trading via MT5 REST
+    python run_bot.py --interval 120         # scan every 120s
+    python run_bot.py --live --interval 90   # live, 90s intervals
 
 Dashboard:  http://localhost:8080/journal
 API:        http://localhost:8080/api/journal/entries
@@ -55,13 +55,13 @@ def _run_agent_loop(interval: int, dry_run: bool, engine: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="MiroFish XAUUSD Trading System",
+        description="GoldBot XAUUSD Trading System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python run_mirofish.py                  # dry-run, 60s loop\n"
-            "  python run_mirofish.py --live            # live trading\n"
-            "  python run_mirofish.py --interval 120    # 120s between scans\n"
+            "  python run_bot.py                  # dry-run, 60s loop\n"
+            "  python run_bot.py --live            # live trading\n"
+            "  python run_bot.py --interval 120    # 120s between scans\n"
         ),
     )
     parser.add_argument(
@@ -78,7 +78,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--engine",
-        choices=["dedicated", "hybrid", "mirofish"],
+        choices=["dedicated", "hybrid", "goldbot"],
         default="dedicated",
         help="Signal engine mode (default: dedicated)",
     )
@@ -94,7 +94,7 @@ def main() -> None:
 
     print()
     print("╔════════════════════════════════════════════════════════════╗")
-    print("║           🐟  MiroFish XAUUSD Trading System             ║")
+    print("║           🐟  GoldBot XAUUSD Trading System             ║")
     print("╠════════════════════════════════════════════════════════════╣")
     print(f"║  Mode:       {mode_label:<44} ║")
     print(f"║  Engine:     {args.engine:<44} ║")
@@ -123,7 +123,7 @@ def main() -> None:
     try:
         _run_agent_loop(args.interval, not args.live, args.engine)
     except KeyboardInterrupt:
-        print("\n\n🛑 MiroFish stopped by user.")
+        print("\n\n🛑 GoldBot stopped by user.")
         sys.exit(0)
 
 

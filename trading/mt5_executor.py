@@ -168,7 +168,7 @@ def place_order(order: TradeOrder) -> dict:
         "tp": order.take_profit,
         "deviation": 20,
         "magic": 20260418,
-        "comment": f"MiroFish {order.confidence:.0%}",
+        "comment": f"GoldBot {order.confidence:.0%}",
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }

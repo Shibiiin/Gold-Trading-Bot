@@ -21,7 +21,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 
 from trading.mt5_executor import connect, disconnect, place_order
-from trading.mirofish_adapter import run_real_mirofish_report
+from trading.llm_adapter import run_real_goldbot_report
 from trading.seed_builder import build_seed_document, fetch_news
 from trading.signal_parser import TradeSignal, parse_report
 from trading.trade_decision import make_decision
@@ -31,8 +31,8 @@ from trading.journal_store import TradeJournalStore
 PORTFOLIO_VALUE = float(os.getenv("PORTFOLIO_VALUE", "10000"))
 DEFAULT_WATCHLIST = [TICKER]
 DRY_RUN = False
-SIGNAL_ENGINE = os.getenv("SIGNAL_ENGINE", "hybrid").strip().lower() or "hybrid"
-MIROFISH_VETO_CONFIDENCE = float(os.getenv("MIROFISH_VETO_CONFIDENCE", "0.60"))
+SIGNAL_ENGINE = os.getenv("SIGNAL_ENGINE", "dedicated").strip().lower() or "dedicated"
+GOLDBOT_VETO_CONFIDENCE = float(os.getenv("GOLDBOT_VETO_CONFIDENCE", "0.60"))
 HIGH_IMPACT_LOOKBACK_HOURS = int(os.getenv("HIGH_IMPACT_LOOKBACK_HOURS", "12"))
 HIGH_IMPACT_TERMS = (
     "fomc",
@@ -63,13 +63,39 @@ HIGH_IMPACT_TERMS = (
     "sanction",
 )
 
+PRESIDENTIAL_TERMS = (
+    "president",
+    "biden",
+    "trump",
+    "white house",
+    "us president"
+)
+
 # Module-level journal for direct logging
 _journal = TradeJournalStore()
 
 
+def _check_consecutive_losses() -> bool:
+    """Check if the last 2 closed trades were losses within the last 12 hours."""
+    entries = _journal.list_entries(limit=10)
+    closed = [e for e in entries if e.get("status") == "closed"]
+    if len(closed) >= 2:
+        if closed[0].get("result") == "loss" and closed[1].get("result") == "loss":
+            try:
+                last_loss_time = datetime.fromisoformat(closed[0]["closed_at"].replace("Z", "+00:00"))
+                if last_loss_time.tzinfo is None:
+                    last_loss_time = last_loss_time.replace(tzinfo=timezone.utc)
+                hours_since = (datetime.now(timezone.utc) - last_loss_time).total_seconds() / 3600
+                if hours_since < 12:
+                    return True
+            except Exception:
+                return True # Fallback if parsing fails
+    return False
+
+
 def _engine_mode() -> str:
     mode = SIGNAL_ENGINE.strip().lower()
-    if mode not in {"dedicated", "hybrid", "mirofish"}:
+    if mode not in {"dedicated", "hybrid", "goldbot"}:
         return "hybrid"
     return mode
 
@@ -87,10 +113,11 @@ def _parse_published_at(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def detect_high_impact_news(ticker: str = TICKER) -> list[dict]:
-    """Return recent articles that imply macro or event-risk volatility."""
+def detect_high_impact_news(ticker: str = TICKER) -> tuple[list[dict], list[dict]]:
+    """Return (macro_articles, presidential_articles) that imply macro or event-risk volatility."""
     lookback_start = datetime.now(timezone.utc) - timedelta(hours=HIGH_IMPACT_LOOKBACK_HOURS)
-    matches: list[dict] = []
+    macro_matches: list[dict] = []
+    presidential_matches: list[dict] = []
 
     for article in fetch_news(ticker):
         published_at = _parse_published_at(str(article.get("publishedAt", "")))
@@ -104,10 +131,16 @@ def detect_high_impact_news(ticker: str = TICKER) -> list[dict]:
                 str(article.get("content", "")),
             ]
         ).lower()
-        if any(term in haystack for term in HIGH_IMPACT_TERMS):
-            matches.append(article)
+        
+        is_presidential = any(term in haystack for term in PRESIDENTIAL_TERMS)
+        is_macro = any(term in haystack for term in HIGH_IMPACT_TERMS)
+        
+        if is_presidential:
+            presidential_matches.append(article)
+        elif is_macro:
+            macro_matches.append(article)
 
-    return matches
+    return macro_matches, presidential_matches
 
 
 def _normalize_tickers(raw_tickers: list[str]) -> list[str]:
@@ -117,7 +150,7 @@ def _normalize_tickers(raw_tickers: list[str]) -> list[str]:
     return [TICKER]
 
 
-def _mirofish_query(ticker: str) -> str:
+def _goldbot_query(ticker: str) -> str:
     return (
         f"Analyze {ticker} for the next 6-24 hours and return one directional trading verdict. "
         "Your answer must include `Direction: BUY`, `Direction: SELL`, or `Direction: HOLD`, "
@@ -138,27 +171,27 @@ def _hold_from_signal(base_signal: TradeSignal, reason: str, strategy_name: str,
     )
 
 
-def _merge_signal_with_mirofish(base_signal: TradeSignal) -> TradeSignal:
+def _merge_signal_with_goldbot(base_signal: TradeSignal) -> TradeSignal:
     mode = _engine_mode()
     if mode == "dedicated" or base_signal.direction == "HOLD":
         return replace(base_signal, strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}:{mode}")
 
     try:
-        report_text = run_real_mirofish_report(
+        report_text = run_real_goldbot_report(
             seed_text=build_seed_document(base_signal.ticker),
-            simulation_requirement=_mirofish_query(base_signal.ticker),
+            simulation_requirement=_goldbot_query(base_signal.ticker),
             project_name=f"{base_signal.ticker} Trading Analysis",
         )
     except Exception as exc:
-        if mode == "mirofish":
+        if mode == "goldbot":
             return _hold_from_signal(
                 base_signal,
-                f"MiroFish mode required backend confirmation, but the real backend failed: {exc}",
-                strategy_name="mirofish_required",
+                f"GoldBot mode required backend confirmation, but the real backend failed: {exc}",
+                strategy_name="goldbot_required",
             )
         return replace(
             base_signal,
-            reasoning=f"{base_signal.reasoning} MiroFish backend unavailable, kept dedicated setup only: {exc}",
+            reasoning=f"{base_signal.reasoning} GoldBot backend unavailable, kept dedicated setup only: {exc}",
             strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}:dedicated_fallback",
         )
 
@@ -174,22 +207,22 @@ def _merge_signal_with_mirofish(base_signal: TradeSignal) -> TradeSignal:
                 3,
             ),
             reasoning=(
-                f"{base_signal.reasoning} MiroFish confirmed {miro_signal.direction} "
+                f"{base_signal.reasoning} GoldBot confirmed {miro_signal.direction} "
                 f"with confidence {miro_signal.confidence:.0%}. {miro_signal.reasoning}"
             ),
             raw_report=report_text,
-            strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}+mirofish_confirmed",
+            strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}+goldbot_confirmed",
             setup_score=round(min(100.0, base_signal.setup_score + 8.0), 1),
         )
 
     if miro_signal.direction in {"BUY", "SELL"} and miro_signal.direction != base_signal.direction:
-        if miro_signal.confidence >= MIROFISH_VETO_CONFIDENCE or mode == "mirofish":
+        if miro_signal.confidence >= GOLDBOT_VETO_CONFIDENCE or mode == "goldbot":
             return _hold_from_signal(
                 base_signal,
                 (
-                    f"Dedicated {base_signal.direction} setup was vetoed by MiroFish, which returned "
+                    f"Dedicated {base_signal.direction} setup was vetoed by GoldBot, which returned "
                     f"{miro_signal.direction} at {miro_signal.confidence:.0%}. "
-                    f"Technical reason: {base_signal.reasoning} MiroFish reason: {miro_signal.reasoning}"
+                    f"Technical reason: {base_signal.reasoning} GoldBot reason: {miro_signal.reasoning}"
                 ),
                 strategy_name="hybrid_veto",
                 raw_report=report_text,
@@ -198,27 +231,27 @@ def _merge_signal_with_mirofish(base_signal: TradeSignal) -> TradeSignal:
             base_signal,
             confidence=round(max(0.65, base_signal.confidence - 0.05), 3),
             reasoning=(
-                f"{base_signal.reasoning} MiroFish leaned {miro_signal.direction} "
+                f"{base_signal.reasoning} GoldBot leaned {miro_signal.direction} "
                 f"at only {miro_signal.confidence:.0%}, so the dedicated setup was kept."
             ),
             raw_report=report_text,
-            strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}+mirofish_soft_disagree",
+            strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}+goldbot_soft_disagree",
         )
 
-    if mode == "mirofish":
+    if mode == "goldbot":
         return _hold_from_signal(
             base_signal,
-            f"MiroFish returned HOLD/neutral, so no trade was taken. {miro_signal.reasoning}",
-            strategy_name="mirofish_neutral",
+            f"GoldBot returned HOLD/neutral, so no trade was taken. {miro_signal.reasoning}",
+            strategy_name="goldbot_neutral",
             raw_report=report_text,
         )
 
     return replace(
         base_signal,
         confidence=round(max(0.64, base_signal.confidence - 0.02), 3),
-        reasoning=f"{base_signal.reasoning} MiroFish was neutral, so the trade remained technical-led.",
+        reasoning=f"{base_signal.reasoning} GoldBot was neutral, so the trade remained technical-led.",
         raw_report=report_text,
-        strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}+mirofish_neutral",
+        strategy_name=f"{base_signal.strategy_name or 'xauusd_levels'}+goldbot_neutral",
     )
 
 
@@ -304,16 +337,40 @@ def process_ticker(ticker: str) -> None:
     print(f"  🔍 SCANNING {ticker} — {now}")
     print(f"{'='*60}")
 
-    high_impact_articles = detect_high_impact_news(ticker)
-    if high_impact_articles:
-        top_titles = ", ".join((article.get("title") or "untitled") for article in high_impact_articles[:2])
-        print(
-            f"  ⚠️  Skipping {ticker}: high-impact news blackout active "
-            f"({len(high_impact_articles)} article(s): {top_titles})"
-        )
+    if _check_consecutive_losses():
+        print("  🛑 DRAWDOWN LIMIT REACHED: 2 consecutive Stop Losses hit recently.")
+        print("  🛑 Trading is paused to protect capital. The bot will wait for conditions to reset.")
         return
 
-    signal = _merge_signal_with_mirofish(analyze_xauusd_setup())
+    macro_articles, presidential_articles = detect_high_impact_news(ticker)
+    
+    if presidential_articles:
+        top_titles = ", ".join((a.get("title") or "untitled") for a in presidential_articles[:1])
+        print("\n  🚨🚨🚨 US PRESIDENTIAL NEWS ALERT 🚨🚨🚨")
+        print(f"  Eagle-eye detected X/News mentions of US President: {top_titles}")
+        print("  Gold volatility is highly expected. Extreme caution activated.\n")
+
+    # Analyze market and merge with GoldBot if applicable
+    signal = _merge_signal_with_goldbot(analyze_xauusd_setup())
+
+    all_articles = presidential_articles + macro_articles
+    if all_articles:
+        top_titles = ", ".join((a.get("title") or "untitled") for a in all_articles[:2])
+        if signal.setup_score < 85.0:
+            print(f"  ⚠️  Red Folder / Presidential News Active: {top_titles}")
+            print(f"  ⚠️  Setup score ({signal.setup_score}) is below exceptional threshold (85.0). Skipping to avoid erratic spikes.")
+            
+            # Change the signal to HOLD because it didn't pass the news override threshold
+            signal = replace(
+                signal,
+                direction="HOLD",
+                confidence=0.0,
+                reasoning=f"Skipped due to Red Folder news ({top_titles}) and score < 85.0",
+                raw_report=f"News blackout triggered. Score was {signal.setup_score}.",
+                strategy_name="news_blackout"
+            )
+        else:
+            print(f"  🔥 HIGH CONFIDENCE NEWS TRADE (Score: {signal.setup_score}): Executing immediately before broker spread widens! News: {top_titles}")
 
     # Print clear trade basis
     _print_trade_basis(signal)
@@ -359,9 +416,9 @@ def main():
     )
     parser.add_argument(
         "--signal-engine",
-        choices=["dedicated", "hybrid", "mirofish"],
+        choices=["dedicated", "hybrid", "goldbot"],
         default=current_engine,
-        help="dedicated technical engine, hybrid with MiroFish confirmation, or MiroFish-required mode",
+        help="dedicated technical engine, hybrid with GoldBot confirmation, or GoldBot-required mode",
     )
     args = parser.parse_args()
 

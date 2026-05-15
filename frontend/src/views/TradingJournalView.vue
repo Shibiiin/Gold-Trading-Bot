@@ -10,8 +10,11 @@
         </p>
       </div>
       <div class="hero-actions">
+        <div class="connection-group">
+          <input type="text" v-model="backendUrlInput" placeholder="Backend URL (e.g. https://...loca.lt)" class="url-input" />
+          <button class="action-btn" @click="saveUrlAndRefresh">Connect</button>
+        </div>
         <button class="action-btn" @click="refresh">Refresh</button>
-        <router-link class="secondary-link" to="/">Open MiroFish</router-link>
       </div>
     </header>
 
@@ -54,8 +57,15 @@
           <h2>History</h2>
           <p>Auto-refreshes every 5 seconds.</p>
         </div>
-        <div class="meta">
-          <span>{{ lastUpdated }}</span>
+        <div class="controls-row">
+          <div class="filter-group">
+            <button :class="['filter-btn', { active: timeFilter === 'all' }]" @click="timeFilter = 'all'">All Time</button>
+            <button :class="['filter-btn', { active: timeFilter === 'month' }]" @click="timeFilter = 'month'">Last 30 Days</button>
+            <button :class="['filter-btn', { active: timeFilter === 'week' }]" @click="timeFilter = 'week'">Last 7 Days</button>
+          </div>
+          <div class="meta">
+            <span>{{ lastUpdated }}</span>
+          </div>
         </div>
       </div>
 
@@ -81,10 +91,10 @@
             <tr v-else-if="error">
               <td colspan="9" class="empty">{{ error }}</td>
             </tr>
-            <tr v-else-if="entries.length === 0">
-              <td colspan="9" class="empty">No trades yet.</td>
+            <tr v-else-if="filteredEntries.length === 0">
+              <td colspan="9" class="empty">No trades match this filter.</td>
             </tr>
-            <tr v-for="entry in entries" :key="entry.signal_id">
+            <tr v-for="entry in filteredEntries" :key="entry.signal_id">
               <td>
                 <div>{{ formatDate(entry.closed_at || entry.opened_at || entry.created_at || entry.updated_at) }}</div>
                 <small>{{ entry.ticker || 'XAUUSD' }}</small>
@@ -117,15 +127,24 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
-import { getTradingJournal } from '../api/trading'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { getTradingJournal, getBackendUrl, setBackendUrl } from '../api/trading'
 
 const entries = ref([])
-const stats = ref({})
+const rawStats = ref({})
 const loading = ref(true)
 const error = ref('')
 const lastUpdated = ref('Waiting for data')
+const timeFilter = ref('all') // 'all', 'week', 'month'
+const backendUrlInput = ref(getBackendUrl())
 let timer = null
+
+const saveUrlAndRefresh = () => {
+  if (backendUrlInput.value) {
+    setBackendUrl(backendUrlInput.value)
+    refresh()
+  }
+}
 
 const formatNumber = (value, digits = 2) => {
   const num = Number(value ?? 0)
@@ -161,15 +180,58 @@ const resultClass = (entry) => {
   return statusClass(entry.status)
 }
 
+const filteredEntries = computed(() => {
+  if (timeFilter.value === 'all') return entries.value
+
+  const now = new Date()
+  return entries.value.filter(entry => {
+    const entryDate = new Date(entry.closed_at || entry.opened_at || entry.created_at || entry.updated_at)
+    if (Number.isNaN(entryDate.getTime())) return true
+
+    if (timeFilter.value === 'week') {
+      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return entryDate >= oneWeekAgo
+    }
+    if (timeFilter.value === 'month') {
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      return entryDate >= oneMonthAgo
+    }
+    return true
+  })
+})
+
+const stats = computed(() => {
+  // Recalculate stats based on filtered entries
+  const closed = filteredEntries.value.filter(e => e.status === 'closed')
+  const wins = closed.filter(e => e.result === 'win').length
+  const losses = closed.filter(e => e.result === 'loss').length
+  const breakeven = closed.filter(e => e.result === 'breakeven').length
+  const closed_count = closed.length
+  const win_rate = closed_count > 0 ? (wins / closed_count) * 100 : 0
+  const total_profit = closed.reduce((sum, e) => sum + (Number(e.profit) || 0), 0)
+  
+  const open_trades = filteredEntries.value.filter(e => e.status === 'open').length
+
+  return {
+    closed_trades: closed_count,
+    wins,
+    losses,
+    breakeven,
+    win_rate,
+    total_profit,
+    open_trades
+  }
+})
+
 const refresh = async () => {
   try {
     if (!entries.value.length) {
       loading.value = true
     }
     error.value = ''
-    const payload = await getTradingJournal(200)
+    const payload = await getTradingJournal(1000) // fetch more to allow client-side filtering
     entries.value = payload.entries || []
-    stats.value = payload.stats || {}
+    rawStats.value = payload.stats || {}
     lastUpdated.value = `Updated ${new Date().toLocaleTimeString()}`
   } catch (err) {
     error.value = err?.message || 'Failed to load journal'
@@ -237,6 +299,27 @@ onUnmounted(() => {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.connection-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.url-input {
+  background: rgba(14, 24, 30, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #eef4f0;
+  padding: 10px 14px;
+  border-radius: 999px;
+  min-width: 250px;
+  font-size: 14px;
+}
+
+.url-input:focus {
+  outline: none;
+  border-color: rgba(227, 188, 98, 0.5);
 }
 
 .action-btn,
@@ -310,6 +393,42 @@ small {
 
 .meta {
   color: #8ea4a1;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.filter-group {
+  display: flex;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn {
+  background: transparent;
+  border: none;
+  color: #8ea4a1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.filter-btn:hover {
+  color: #fff;
+}
+
+.filter-btn.active {
+  background: rgba(227, 188, 98, 0.15);
+  color: #e3bc62;
+  font-weight: 600;
 }
 
 .table-wrap {

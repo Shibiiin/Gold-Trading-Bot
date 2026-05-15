@@ -7,6 +7,7 @@ input string Symbol_ = "";
 input int    PollSeconds = 60;
 input double LotOverride = 0.0;
 input double MinLotSize = 0.01;
+input double MaxLotSize = 0.02;
 input double RiskPerTradePct = 1.0;
 input double MaxMarginUsagePct = 20.0;
 input int    MarketClosedRetrySeconds = 300;
@@ -181,7 +182,9 @@ double NormalizeLotSize(string symbol, double requested)
    double normalized = MathFloor(requested / step) * step;
    if(normalized < minLot)
       normalized = minLot;
-   if(normalized > maxLot && maxLot > 0.0)
+   if(MaxLotSize > 0.0 && normalized > MaxLotSize)
+      normalized = MaxLotSize;
+   else if(maxLot > 0.0 && normalized > maxLot)
       normalized = maxLot;
 
    int digits = 0;
@@ -229,6 +232,12 @@ double CalculateRiskBasedLot(string symbol, ENUM_ORDER_TYPE orderType, double en
    return NormalizeLotSize(symbol, riskLot);
 }
 
+bool ReportLivePrice(string symbol, double price)
+{
+   string payload = StringFormat("{\"ticker\":\"%s\",\"price\":%.5f}", JsonEscape(symbol), price);
+   return PostJson(SignalServerURL + "/price/update", payload);
+}
+
 bool ReportExecutionOpen(string signalId, string action, double confidence, double entryPrice, double stopLoss, double takeProfit, double lot, ulong orderTicket, ulong dealTicket)
 {
    string payload = StringFormat(
@@ -244,7 +253,9 @@ bool ReportExecutionOpen(string signalId, string action, double confidence, doub
       JsonEscape(IntegerToString((long)orderTicket)),
       JsonEscape(IntegerToString((long)dealTicket))
    );
-   return PostJson(SignalServerURL + "/execution/open", payload);
+   bool ok = PostJson(SignalServerURL + "/execution/open", payload);
+   if(ok) Print("Execution report sent to Python for signal ", signalId);
+   return ok;
 }
 
 bool FindLatestClosedDeal(double &closePrice, double &profit, ulong &dealTicket)
@@ -332,7 +343,7 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(20);
    EventSetTimer(MathMax(1, PollSeconds));
-   Print("MiroFishEA initialized for ", activeSymbol, " polling ", SignalServerURL);
+   Print("GoldBotEA initialized for ", activeSymbol, " polling ", SignalServerURL);
    return(INIT_SUCCEEDED);
 }
 
@@ -351,6 +362,10 @@ void ProcessSignal()
    if(now - lastPoll < PollSeconds)
       return;
    lastPoll = now;
+   
+   // Send live price to server so Python stays synced with Broker
+   double currentPrice = SymbolInfoDouble(activeSymbol, SYMBOL_BID);
+   if(currentPrice > 0) ReportLivePrice(activeSymbol, currentPrice);
 
    string json = FetchSignal();
    if(json == "")
@@ -364,7 +379,7 @@ void ProcessSignal()
    double sl = StringToDouble(JsonField(json, "sl"));
    double tp = StringToDouble(JsonField(json, "tp"));
    double lot = StringToDouble(JsonField(json, "lot"));
-   string comment = StringFormat("MiroFish %.0f%%", confidence * 100.0);
+   string comment = StringFormat("GoldBot %.0f%%", confidence * 100.0);
 
    if(LotOverride > 0.0)
       lot = LotOverride;
@@ -387,37 +402,59 @@ void ProcessSignal()
    {
       double ask = SymbolInfoDouble(activeSymbol, SYMBOL_ASK);
       executedEntryPrice = ask;
+      
+      // FIX: Calculate relative SL/TP to avoid 10016 invalid stops due to Yahoo/Broker price mismatch
+      double symPoint = SymbolInfoDouble(activeSymbol, SYMBOL_POINT);
+      int symDigits = (int)SymbolInfoInteger(activeSymbol, SYMBOL_DIGITS);
+      double useSL = ask - (300 * symPoint); // 30 pips SL
+      double useTP = ask + (600 * symPoint); // 60 pips TP
+      
       double requestedLot = lot;
       if(LotOverride > 0.0)
          requestedLot = LotOverride;
       else
       {
-         requestedLot = CalculateRiskBasedLot(activeSymbol, ORDER_TYPE_BUY, ask, sl);
+         requestedLot = CalculateRiskBasedLot(activeSymbol, ORDER_TYPE_BUY, ask, useSL);
          if(requestedLot <= 0.0)
             requestedLot = lot;
       }
       requestedLot = NormalizeLotSize(activeSymbol, requestedLot);
-      Print("Using lot=", DoubleToString(requestedLot, 8), " balance=", DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), " risk%=", DoubleToString(RiskPerTradePct, 2), " symbol=", activeSymbol);
+      Print("Using lot=", DoubleToString(requestedLot, 8), " ask=", DoubleToString(ask, symDigits), " sl=", DoubleToString(useSL, symDigits));
       lot = requestedLot;
-      ok = trade.Buy(lot, activeSymbol, ask, sl, tp, comment);
+      ok = trade.Buy(lot, activeSymbol, ask, useSL, useTP, comment);
+      sl = useSL; tp = useTP; // Update for reporting
    }
    else if(action == "SELL")
    {
       double bid = SymbolInfoDouble(activeSymbol, SYMBOL_BID);
       executedEntryPrice = bid;
+      
+      // FIX: Calculate relative SL/TP using distances from Python signal to avoid 10016 invalid stops due to price mismatch
+      double symPoint = SymbolInfoDouble(activeSymbol, SYMBOL_POINT);
+      int symDigits = (int)SymbolInfoInteger(activeSymbol, SYMBOL_DIGITS);
+      
+      double pythonStopDistance = sl - plannedEntry;
+      double pythonTargetDistance = plannedEntry - tp;
+      if (pythonStopDistance <= 0) pythonStopDistance = 300 * symPoint; // Fallback
+      if (pythonTargetDistance <= 0) pythonTargetDistance = 600 * symPoint; // Fallback
+      
+      double useSL = NormalizeDouble(bid + pythonStopDistance, symDigits);
+      double useTP = NormalizeDouble(bid - pythonTargetDistance, symDigits);
+      
       double requestedLot = lot;
       if(LotOverride > 0.0)
          requestedLot = LotOverride;
       else
       {
-         requestedLot = CalculateRiskBasedLot(activeSymbol, ORDER_TYPE_SELL, bid, sl);
+         requestedLot = CalculateRiskBasedLot(activeSymbol, ORDER_TYPE_SELL, bid, useSL);
          if(requestedLot <= 0.0)
             requestedLot = lot;
       }
       requestedLot = NormalizeLotSize(activeSymbol, requestedLot);
-      Print("Using lot=", DoubleToString(requestedLot, 8), " balance=", DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2), " risk%=", DoubleToString(RiskPerTradePct, 2), " symbol=", activeSymbol);
+      Print("Using lot=", DoubleToString(requestedLot, 8), " bid=", DoubleToString(bid, symDigits), " sl=", DoubleToString(useSL, symDigits));
       lot = requestedLot;
-      ok = trade.Sell(lot, activeSymbol, bid, sl, tp, comment);
+      ok = trade.Sell(lot, activeSymbol, bid, useSL, useTP, comment);
+      sl = useSL; tp = useTP; // Update for reporting
    }
    else
    {

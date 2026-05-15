@@ -1,9 +1,9 @@
-"""Parses MiroFish report text into a structured trading signal.
+"""Parses GoldBot report text into a structured trading signal.
 
 Improvements over the original keyword-counting approach:
   • Negation-aware sentiment — "not bullish" counts as bearish.
   • Explicit direction extraction — recognises "Direction: BUY" patterns
-    emitted by both the real MiroFish backend and the local stub.
+    emitted by both the real GoldBot backend and the local stub.
   • Falls back gracefully to sentiment scoring when no explicit markers
     are present.
 """

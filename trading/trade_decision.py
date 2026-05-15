@@ -27,7 +27,7 @@ from .signal_parser import TradeSignal
 MIN_CONFIDENCE     = 0.65   # skip trade if confidence is below this
 RISK_PER_TRADE_PCT = 0.01   # risk 1% of portfolio per trade
 MIN_POSITION_LOT   = 0.01   # minimum lot size allowed
-MAX_POSITION_LOT   = 0.03   # hard cap on lot size
+MAX_POSITION_LOT   = 0.02   # hard cap on lot size (user requested for small account)
 MAX_DAILY_RISK_PCT = 0.03   # halt trading after 3% portfolio risk committed today
 MAX_DAILY_TRADES   = 3      # halt trading after taking 3 trades in a day
 

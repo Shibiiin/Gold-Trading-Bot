@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MiroFish — XAUUSD Live Trade Journal</title>
+  <title>GoldBot — XAUUSD Live Trade Journal</title>
   <meta name="description" content="Live automated XAUUSD trading journal — dynamic RR, volume-based TP, and real-time trade tracking." />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
@@ -371,7 +371,7 @@
       <div class="brand">
         <div class="logo">M</div>
         <div class="brand-text">
-          <h1>MiroFish Journal</h1>
+          <h1>GoldBot Journal</h1>
           <p>XAUUSD Automated Trading • Dynamic RR • Volume-Adaptive</p>
         </div>
       </div>
@@ -411,7 +411,7 @@
       <div class="stat-card gold">
         <div class="stat-label">Net Profit</div>
         <div class="stat-value" id="totalProfit">$0</div>
-        <div class="stat-sub">From closed trades</div>
+        <div class="stat-sub" id="closedCount">0 closed trades</div>
       </div>
     </section>
 
@@ -455,6 +455,7 @@
               <th>Direction</th>
               <th>Entry</th>
               <th>SL / TP</th>
+              <th>Exit / P&L</th>
               <th>Pips</th>
               <th>RR</th>
               <th>Lot</th>
@@ -503,26 +504,34 @@
 
     const resultBadge = (e) => {
       const r = String(e.result || '').toLowerCase();
-      if (!r) return badge(e.status || 'pending', 'pending');
       const profit = Number(e.profit || 0);
-      const profitText = e.status === 'closed' ? ` $${profit.toFixed(2)}` : '';
-      if (r === 'win') return badge(`✓ win${profitText}`, 'win');
-      if (r === 'loss') return badge(`✗ loss${profitText}`, 'loss');
-      return badge(`${r}${profitText}`, 'breakeven');
+      const status = String(e.status || '').toLowerCase();
+      
+      if (status === 'open') return badge('● OPEN', 'open');
+      if (status !== 'closed') return badge(status || 'pending', 'pending');
+      
+      // Trade is closed — show result with profit
+      const sign = profit >= 0 ? '+' : '';
+      const profitText = ` ${sign}$${profit.toFixed(2)}`;
+      if (r === 'win' || profit > 0) return badge(`✓ WIN${profitText}`, 'win');
+      if (r === 'loss' || profit < 0) return badge(`✗ LOSS${profitText}`, 'loss');
+      return badge(`— BE${profitText}`, 'breakeven');
     };
 
     const renderStats = (filteredEntries) => {
-      let wins = 0, losses = 0, open = 0, profit = 0, signals = filteredEntries.length;
+      let wins = 0, losses = 0, breakevens = 0, open = 0, profit = 0, signals = filteredEntries.length;
       filteredEntries.forEach(e => {
         if (e.status === 'open') open++;
         if (e.status === 'closed') {
           const p = Number(e.profit || 0);
           profit += p;
-          if (e.result === 'win') wins++;
-          else if (e.result === 'loss') losses++;
+          const r = String(e.result || '').toLowerCase();
+          if (r === 'win' || p > 0) wins++;
+          else if (r === 'loss' || p < 0) losses++;
+          else breakevens++;
         }
       });
-      const closedCount = wins + losses;
+      const closedCount = wins + losses + breakevens;
       const winRate = closedCount > 0 ? (wins / closedCount) * 100 : 0;
 
       document.getElementById('winRate').textContent = closedCount > 0 ? `${fmt(winRate, 1)}%` : '—';
@@ -530,10 +539,15 @@
       document.getElementById('losses').textContent = losses;
       document.getElementById('openTrades').textContent = open;
       document.getElementById('totalSignals').textContent = signals;
+      document.getElementById('closedCount').textContent = `${closedCount} closed (${breakevens} BE)`;
       
       const profitEl = document.getElementById('totalProfit');
-      profitEl.textContent = `$${fmt(profit)}`;
-      profitEl.style.color = profit > 0 ? 'var(--green)' : profit < 0 ? 'var(--red)' : '';
+      if (profit >= 0) {
+        profitEl.textContent = `$${fmt(profit)}`;
+      } else {
+        profitEl.textContent = `-$${fmt(Math.abs(profit))}`;
+      }
+      profitEl.style.color = profit > 0 ? 'var(--green)' : profit < 0 ? 'var(--red)' : 'var(--muted)';
     };
 
     const renderHistory = (entries) => {
@@ -598,6 +612,19 @@
         const strategy = e.strategy_name || 'xauusd_levels';
         const score = Number(e.setup_score || 0);
 
+        const exitPrice = e.close_price ? `$${fmt(e.close_price)}` : '—';
+        const profitVal = e.profit !== undefined && e.profit !== null ? Number(e.profit) : null;
+        let profitDisplay = '—';
+        if (profitVal !== null) {
+            profitDisplay = `<span style="color:${profitVal > 0 ? 'var(--green)' : profitVal < 0 ? 'var(--red)' : 'var(--muted)'}; font-weight: 700;">${profitVal >= 0 ? '+' : ''}$${fmt(profitVal)}</span>`;
+        }
+
+        const exitCell = `
+          <div class="price-stack">
+            <div class="price-main">${exitPrice}</div>
+            <div class="price-sub">${profitDisplay}</div>
+          </div>`;
+
         return `<tr>
           <td><div class="price-main">${fmtTime(time)}</div></td>
           <td>${statusBadge(e.status)}</td>
@@ -607,6 +634,7 @@
             <div><span class="price-sub">SL</span> $${fmt(e.sl)}</div>
             <div><span class="price-sub">TP</span> $${fmt(e.tp)}</div>
           </div></td>
+          <td>${exitCell}</td>
           <td>${pipsCell}</td>
           <td>${rrCell}</td>
           <td class="price-main">${fmt(e.lot)}</td>
@@ -659,15 +687,19 @@
     const applyFilter = () => {
       const selectedWeek = document.getElementById('weekFilter').value;
       let filtered = allEntries;
+      
+      // Filter out 'signal_ready' entries as requested (show only open/closed/actionable)
+      filtered = allEntries.filter(e => e.status !== 'signal_ready' && e.action && e.action !== 'SKIP');
+
       if (selectedWeek !== 'all') {
-        filtered = allEntries.filter(e => {
-          const timeStr = e.closed_at || e.updated_at || e.created_at;
+        filtered = filtered.filter(e => {
+          const timeStr = e.closed_at || e.opened_at || e.created_at;
           return getWeekLabel(timeStr) === selectedWeek;
         });
       }
-      const actionable = filtered.filter(e => e.action && e.action !== 'SKIP');
-      renderStats(actionable);
-      renderRows(actionable);
+      
+      renderStats(filtered);
+      renderRows(filtered);
     };
 
     document.getElementById('weekFilter').addEventListener('change', applyFilter);

@@ -1,16 +1,16 @@
 {
-  "name": "mirofish",
+  "name": "goldbot",
   "version": "0.1.0",
-  "description": "MiroFish - 简洁通用的群体智能引擎，预测万物",
+  "description": "GoldBot - 简洁通用的群体智能引擎，预测万物",
   "scripts": {
     "dev": "concurrently --kill-others -n \"AGENT,TUNNEL\" -c \"green,magenta\" \"npm run agent:tech\" \"npm run tunnel\"",
     "dev:week1": "npm run dev",
     "dev:week2": "concurrently --kill-others -n \"AGENT,TUNNEL\" -c \"green,magenta\" \"npm run agent:ai\" \"npm run tunnel\"",
     "dev:week3": "concurrently --kill-others -n \"AGENT,TUNNEL\" -c \"green,magenta\" \"npm run agent:hybrid\" \"npm run tunnel\"",
-    "agent:tech": "./.venv-backend/bin/python run_mirofish.py --live --interval 60 --engine dedicated",
-    "agent:ai": "./.venv-backend/bin/python run_mirofish.py --live --interval 60 --engine mirofish",
-    "agent:hybrid": "./.venv-backend/bin/python run_mirofish.py --live --interval 60 --engine hybrid",
-    "tunnel": "npx localtunnel --port 8080 --subdomain shibin-mirofish-journal"
+    "agent:tech": "./.venv-backend/bin/python run_bot.py --live --interval 60 --engine dedicated",
+    "agent:ai": "./.venv-backend/bin/python run_bot.py --live --interval 60 --engine goldbot",
+    "agent:hybrid": "./.venv-backend/bin/python run_bot.py --live --interval 60 --engine hybrid",
+    "tunnel": "npx localtunnel --port 8080 --subdomain shibin-goldbot-live-journal"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

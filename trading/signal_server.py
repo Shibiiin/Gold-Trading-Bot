@@ -12,7 +12,7 @@ except ImportError:
     from journal_store import TradeJournalStore
 
 try:
-    from flask import Flask, jsonify, request, send_file
+    from flask import Flask, jsonify, request, send_file, redirect
 except ModuleNotFoundError:
     class _MissingFlaskApp:
         def __init__(self):
@@ -39,6 +39,7 @@ else:
     app = Flask(__name__)
 
 _signals: dict[str, dict] = {}
+_live_prices: dict[str, float] = {}
 _lock = threading.Lock()
 _journal = TradeJournalStore()
 _dashboard_path = Path(__file__).resolve().with_name("journal_dashboard.html")
@@ -111,6 +112,7 @@ def execution_open():
     if trade is None:
         return jsonify({"status": "error", "error": "signal not found"}), 404
 
+    print(f"\n🚀 [MT5] TRADE EXECUTED: {ticker} {trade.get('action')} @ {trade.get('entry_price')} (Signal: {signal_id})")
     _mark_status(ticker, signal_id, "open")
     return jsonify({"status": "ok", "signal_id": signal_id})
 
@@ -130,8 +132,32 @@ def execution_close():
     if trade is None:
         return jsonify({"status": "error", "error": "signal not found"}), 404
 
+    profit = trade.get('profit', 0)
+    result = trade.get('result', 'unknown')
+    emoji = '🟢' if result == 'win' else '🔴' if result == 'loss' else '⚪'
+    print(f"\n{emoji} [MT5] TRADE CLOSED: {ticker} {result.upper()} P&L: ${profit:+.2f} (Signal: {signal_id})")
+
     _mark_status(ticker, signal_id, "closed")
     return jsonify({"status": "ok", "signal_id": signal_id})
+
+
+@app.post("/price/update")
+def price_update():
+    if request is None:
+        return jsonify({"status": "error"}), 400
+    payload = request.get_json(silent=True) or {}
+    ticker = str(payload.get("ticker", "")).upper().strip()
+    price = float(payload.get("price", 0.0))
+    if ticker and price > 0:
+        with _lock:
+            _live_prices[ticker] = price
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "error"}), 400
+
+
+def get_live_broker_price(ticker: str) -> float | None:
+    with _lock:
+        return _live_prices.get(ticker.upper())
 
 
 @app.get("/signal/")
@@ -172,6 +198,11 @@ def get_journal_entries():
 @app.get("/api/journal/stats")
 def get_journal_stats():
     return jsonify(_journal.stats())
+
+
+@app.get("/")
+def index():
+    return redirect("/journal")
 
 
 @app.get("/journal")
